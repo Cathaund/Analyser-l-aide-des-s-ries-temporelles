@@ -1,0 +1,87 @@
+from datetime import datetime
+import numpy as np
+import pandas as pd
+import matplotlib.pylab as plt
+%matplotlib inline
+from matplotlib.pylab import rcParams
+
+from statsmodels.tsa.stattools import adfuller
+import pmdarima as pm
+from sklearn.metrics import mean_absolute_error
+
+df = pd.read_csv("/home/mahe/L2/S3/serie-T/Data-Huge/Stocks/air.us.txt")
+
+#string to date format
+df['Date'] = pd.to_datetime(df['Date'],infer_datetime_format=True)
+df = df.set_index(['Date'])
+df.head(5)
+
+df_close = df['Close']
+plt.figure(figsize=(15,7))
+plt.title("Airbus Stock Price")
+plt.xlabel('Date')
+plt.ylabel('Close Price USD')
+plt.plot(df_close)
+plt.show()
+
+n = "05-15-2015"
+test_values = df_close[:n]
+#Augmented Dickey–Fuller test:
+print('Results of Dickey Fuller Test:')
+dftest = adfuller(test_values, autolag='AIC')
+
+dfoutput = pd.Series(dftest[0:4], index=['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
+for key,value in dftest[4].items():
+    dfoutput['Critical Value (%s)'%key] = value
+    
+print(dfoutput)
+
+#Standard ARIMA Model
+ARIMA_model = pm.auto_arima(test_values[-200:], 
+                      start_p=1, 
+                      start_q=1,
+                      test='adf',
+                      max_p=5, max_q=5, # maximum p and q
+                      m=30, # frequency of series (if m==1, seasonal is set to FALSE automatically)
+                      d=False,
+                      seasonal=True, # No Seasonality for standard ARIMA
+                      start_P=0,
+                      D=1,
+                      trace=True, #logs 
+                      error_action='warn', #shows errors ('ignore' silences these)
+                      suppress_warnings=True,
+                      stepwise=True)
+                      
+ARIMA_model.plot_diagnostics(figsize=(15,12))
+plt.show()
+
+def forecast(ARIMA_model, periods=45):
+    # Forecast
+    n_periods = periods
+    fitted, confint = ARIMA_model.predict(n_periods=n_periods, return_conf_int=True)
+    index_of_fc = pd.date_range(test_values.index[-1], periods = n_periods, freq='B')
+
+    # make series for plotting purpose
+    fitted_series = pd.Series(fitted.array, index=index_of_fc)
+    lower_series = pd.Series(confint[:, 0], index=index_of_fc)
+    upper_series = pd.Series(confint[:, 1], index=index_of_fc)
+
+    # Plot
+    plt.figure(figsize=(15,7))
+    plt.plot(test_values["05-15-2014":], color='#1f76b4', label='Testing Data')
+    plt.plot(df_close[n:], color='#D22A0D', label='Real Data')
+    plt.plot(fitted_series, color='darkgreen', label='Prediction')
+    """plt.fill_between(lower_series.index, 
+                    lower_series, 
+                    upper_series, 
+                    color='k', alpha=.15)"""
+
+    plt.title("ARIMA/SARIMA - Forecast of Airbus Stock Data")
+    mape = mean_absolute_error(df_close["05-15-2015":"07-20-2015"], fitted_series)*100
+    print(mape)
+    plt.legend()
+    plt.show()
+    
+    
+
+forecast(ARIMA_model)
